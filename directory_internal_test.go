@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diskfs/go-diskfs/util/printer"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -63,10 +62,7 @@ func TestDirectoryEntriesToBytes(t *testing.T) {
 	case len(output) != len(b):
 		t.Errorf("mismatched byte slice length actual %d, expected %d", len(output), len(b))
 	case !bytes.Equal(output, b):
-		diff, diffString := printer.DumpByteSlicesWithDiffs(output, b, 32, false, true, true)
-		if diff {
-			t.Errorf("directory.toBytes() mismatched, actual then expected\n%s", diffString)
-		}
+		t.Errorf("directory.toBytes() mismatched")
 	}
 }
 

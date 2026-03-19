@@ -1,16 +1,14 @@
 package fat32
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	iofs "io/fs"
 	"os"
-
-	"github.com/diskfs/go-diskfs/filesystem"
 )
 
-var _ filesystem.File = &File{}
-var _ iofs.File = &File{}
+var ErrReadonlyFilesystem = errors.New("read-only filesystem")
 
 // File represents a single file in a FAT32 filesystem
 type File struct {
@@ -182,15 +180,15 @@ func (fl *File) Write(p []byte) (int, error) {
 	}
 
 	totalWritten := 0
-	writableFile, err := fl.filesystem.backend.Writable()
-	if err != nil {
-		return totalWritten, err
+	writableFile, ok := fl.filesystem.backend.(io.WriterAt)
+	if !ok {
+		return totalWritten, ErrReadonlyFilesystem
 	}
 
 	fs := fl.filesystem
 	// if the file was not opened RDWR, nothing we can do
 	if !fl.isReadWrite {
-		return totalWritten, filesystem.ErrReadonlyFilesystem
+		return totalWritten, ErrReadonlyFilesystem
 	}
 	// what is the new file size?
 	writeSize := len(p)

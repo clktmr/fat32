@@ -2,8 +2,7 @@ package fat32
 
 import (
 	"fmt"
-
-	"github.com/diskfs/go-diskfs/util/timestamp"
+	"time"
 )
 
 // Directory represents a single directory in a FAT32 filesystem
@@ -51,7 +50,7 @@ func (d *Directory) createEntry(name string, cluster uint32, dir bool) (*directo
 		lfn = name
 	}
 
-	ts := timestamp.GetTime()
+	ts := time.Now().UTC()
 
 	// allocate a slot for the new filename in the existing directory
 	entry := directoryEntry{
@@ -114,7 +113,7 @@ func (d *Directory) renameEntry(oldFileName, newFileName string) error {
 			entry.filenameLong = lfn
 			entry.filenameShort = shortName
 			entry.fileExtension = extension
-			entry.modifyTime = timestamp.GetTime()
+			entry.modifyTime = time.Now().UTC()
 			isReplaced = true
 		}
 		newEntries = append(newEntries, entry)
@@ -130,7 +129,7 @@ func (d *Directory) renameEntry(oldFileName, newFileName string) error {
 
 // createVolumeLabel create a volume label entry in the given directory, and return the handle to it
 func (d *Directory) createVolumeLabel(name string) (*directoryEntry, error) {
-	ts := timestamp.GetTime()
+	ts := time.Now().UTC()
 
 	// allocate a slot for the new filename in the existing directory
 	entry := directoryEntry{

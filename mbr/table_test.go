@@ -8,13 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/diskfs/go-diskfs/partition/mbr"
-	"github.com/diskfs/go-diskfs/testhelper"
+	"github.com/clktmr/fat32/mbr"
 )
 
 const (
@@ -86,20 +83,10 @@ func compareMBRBytes(b1, b2 []byte) bool {
 	return true
 }
 
-func TestTableType(t *testing.T) {
-	expected := "mbr"
-	table := mbr.GetValidTable()
-	tableType := table.Type()
-	if tableType != expected {
-		t.Errorf("Type() returned unexpected table type, actual %s expected %s", tableType, expected)
-	}
-}
-
 func TestTableRead(t *testing.T) {
 	t.Run("error reading file", func(t *testing.T) {
 		expected := "error reading MBR from file"
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Reader signatire
+		f := &mbr.FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
 				return 0, errors.New(expected)
 			},
@@ -118,8 +105,7 @@ func TestTableRead(t *testing.T) {
 	t.Run("insufficient data read", func(t *testing.T) {
 		size := 100
 		expected := fmt.Sprintf("read only %d bytes of MBR", size)
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Reader signatire
+		f := &mbr.FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
 				return size, nil
 			},
@@ -158,8 +144,7 @@ func TestTableWrite(t *testing.T) {
 	t.Run("error writing file", func(t *testing.T) {
 		table := mbr.GetValidTable()
 		expected := "error writing partition table to disk"
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+		f := &mbr.FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return 0, errors.New(expected)
 			},
@@ -175,8 +160,7 @@ func TestTableWrite(t *testing.T) {
 	t.Run("insufficient data written", func(t *testing.T) {
 		table := mbr.GetValidTable()
 		var size int
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+		f := &mbr.FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				size = len(b) - 1
 				return size, nil
@@ -210,7 +194,7 @@ func TestTableWrite(t *testing.T) {
 		remainder := mbrBytes[446:]
 		tableBytes := make([]byte, 0, len(remainder))
 
-		f := &testhelper.FileImpl{
+		f := &mbr.FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				switch offset {
 				case 446:
@@ -243,106 +227,6 @@ func TestTableWrite(t *testing.T) {
 			t.Error("bootloader was changed when it should not be")
 		}
 	})
-	t.Run("successful full test", func(t *testing.T) {
-		f, err := tmpDisk("", 10*1024*1024)
-		if err != nil {
-			t.Fatalf("error creating new temporary disk: %v", err)
-		}
-		defer f.Close()
-
-		if keepTmpFiles {
-			defer os.Remove(f.Name())
-		} else {
-			fmt.Println(f.Name())
-		}
-
-		fileInfo, err := f.Stat()
-		if err != nil {
-			t.Fatalf("error reading info on temporary disk: %v", err)
-		}
-
-		// this is partition start and end in sectors, not bytes
-		sectorSize := 512
-		partitionStart := uint32(2048)
-		// make it a 5MB partition
-		partitionSize := uint32(5000)
-		table := &mbr.Table{
-			LogicalSectorSize:  sectorSize,
-			PhysicalSectorSize: sectorSize,
-			Partitions: []*mbr.Partition{
-				{Bootable: true, Type: mbr.Linux, Start: partitionStart, Size: partitionSize},
-			},
-		}
-
-		err = table.Write(f, fileInfo.Size())
-		switch {
-		case err != nil:
-			t.Errorf("unexpected err: %v", err)
-		default:
-			// we only run this if we have a real image
-			if intImage == "" {
-				return
-			}
-
-			output := new(bytes.Buffer)
-			mpath := "/file.img"
-			mounts := map[string]string{
-				f.Name(): mpath,
-			}
-			err := testhelper.DockerRun(nil, output, false, true, mounts, intImage, "sfdisk", "-l", mpath)
-			outString := output.String()
-			if err != nil {
-				t.Errorf("unexpected err: %v", err)
-				t.Log(outString)
-			}
-
-			/* expected output format
-			Disk /file.img: 10 MiB, 10485760 bytes, 20480 sectors
-			Units: sectors of 1 * 512 = 512 bytes
-			Sector size (logical/physical): 512 bytes / 512 bytes
-			I/O size (minimum/optimal): 512 bytes / 512 bytes
-			Disklabel type: dos
-			Disk identifier: 0x00000000
-
-			Device     Boot Start   End Sectors  Size Id Type
-			/file.img1 *     2048  7047    5000  2.5M 83 Linux
-			*/
-			partitionMatcher := regexp.MustCompile(`/file.img(\d)\s+(\s|\*)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)`)
-
-			partitionParts := partitionMatcher.FindStringSubmatch(outString)
-
-			if len(partitionParts) < 9 {
-				t.Errorf("unable to retrieve partition parts %v", partitionParts)
-				return
-			}
-
-			// partition number should be "1"
-			if partitionParts[1] != "1" {
-				t.Errorf("mismatched partition number, actual %s, expected %d", partitionParts[1], 1)
-			}
-			// partition should be bootable
-			if partitionParts[2] != "*" {
-				t.Errorf("partition not marked as bootable")
-			}
-			// partition start should match
-			if partitionParts[3] != strconv.Itoa(int(partitionStart)) {
-				t.Errorf("mismatched partition start, actual %s, expected %d", partitionParts[3], partitionStart)
-			}
-			// partition size should match
-			if partitionParts[5] != strconv.Itoa(int(partitionSize)) {
-				t.Errorf("mismatched partition size, actual %s, expected %d", partitionParts[5], partitionSize)
-			}
-			// skip partitionParts[6] ; we do not look at the size in bytes,
-			// partition type code should match
-			if partitionParts[7] != fmt.Sprintf("%x", mbr.Linux) {
-				t.Errorf("mismatched partition type, actual %s, expected %x", partitionParts[7], mbr.Linux)
-			}
-			// partition type name should match
-			if partitionParts[8] != "Linux" {
-				t.Errorf("mismatched partition type name, actual %s, expected %s", partitionParts[8], "Linux")
-			}
-		}
-	})
 }
 func TestGetPartitionSize(t *testing.T) {
 	table := mbr.GetValidTable()
@@ -373,8 +257,7 @@ func TestReadPartitionContents(t *testing.T) {
 	size := 100
 	b2 := make([]byte, size)
 	_, _ = rand.Read(b2)
-	f := &testhelper.FileImpl{
-		//nolint:revive // b is unused, but we keep it here for the consistent io.Reader signatire
+	f := &mbr.FakeBackend{
 		Reader: func(b []byte, offset int64) (int, error) {
 			copy(b, b2)
 			return size, io.EOF
@@ -402,8 +285,7 @@ func TestWritePartitionContents(t *testing.T) {
 	_, _ = rand.Read(b)
 	reader := bytes.NewReader(b)
 	b2 := make([]byte, 0, size)
-	f := &testhelper.FileImpl{
-		//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+	f := &mbr.FakeBackend{
 		Writer: func(b []byte, offset int64) (int, error) {
 			b2 = append(b2, b...)
 			return len(b), nil

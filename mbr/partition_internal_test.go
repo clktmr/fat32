@@ -10,9 +10,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/diskfs/go-diskfs/partition/part"
-	"github.com/diskfs/go-diskfs/testhelper"
 )
 
 const (
@@ -20,6 +17,16 @@ const (
 	partitionStart   = 2048
 	partitionSize    = 20480
 )
+
+// FakeBackend implements io.ReaderAt and io.WriterAt used for testing to enable
+// stubbing out files
+type FakeBackend struct {
+	Reader func(b []byte, offset int64) (int, error)
+	Writer func(b []byte, offset int64) (int, error)
+}
+
+func (f *FakeBackend) ReadAt(b []byte, offset int64) (int, error)  { return f.Reader(b, offset) }
+func (f *FakeBackend) WriteAt(b []byte, offset int64) (int, error) { return f.Writer(b, offset) }
 
 func TestFromBytes(t *testing.T) {
 	t.Run("Short byte slice", func(t *testing.T) {
@@ -145,8 +152,7 @@ func TestReadContents(t *testing.T) {
 		var b bytes.Buffer
 		writer := bufio.NewWriter(&b)
 		expected := "error reading from file"
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Reader signatire
+		f := &FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
 				return 0, errors.New(expected)
 			},
@@ -180,8 +186,7 @@ func TestReadContents(t *testing.T) {
 		size := 100
 		b2 := make([]byte, size)
 		_, _ = rand.Read(b2)
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Reader signatire
+		f := &FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
 				copy(b, b2)
 				return size, io.EOF
@@ -219,7 +224,7 @@ func TestWriteContents(t *testing.T) {
 		}
 		var b bytes.Buffer
 		reader := bufio.NewReader(&b)
-		f := &testhelper.FileImpl{}
+		f := &FakeBackend{}
 		written, err := partition.WriteContents(f, reader)
 		if written != 0 {
 			t.Errorf("returned %d bytes written instead of 0", written)
@@ -227,7 +232,7 @@ func TestWriteContents(t *testing.T) {
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
 		}
-		var ierr *part.IncompletePartitionWriteError
+		var ierr *IncompletePartitionWriteError
 		if !errors.As(err, &ierr) {
 			t.Errorf("expected IncompletePartitionWriteError, got %v", err)
 		}
@@ -250,8 +255,7 @@ func TestWriteContents(t *testing.T) {
 		_, _ = rand.Read(b)
 		reader := bytes.NewReader(b)
 		expected := "error writing to file"
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+		f := &FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return 0, errors.New(expected)
 			},
@@ -286,8 +290,7 @@ func TestWriteContents(t *testing.T) {
 		_, _ = rand.Read(b)
 		reader := bytes.NewReader(b)
 		expected := "requested to write at least"
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+		f := &FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return len(b), nil
 			},
@@ -327,8 +330,7 @@ func TestWriteContents(t *testing.T) {
 		_, _ = rand.Read(b)
 		b2 := make([]byte, 0, size)
 		reader := bytes.NewReader(b)
-		f := &testhelper.FileImpl{
-			//nolint:revive // b is unused, but we keep it here for the consistent io.Writer signatire
+		f := &FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				b2 = append(b2, b...)
 				return len(b), nil

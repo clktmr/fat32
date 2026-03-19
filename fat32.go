@@ -9,9 +9,6 @@ import (
 	"path"
 	"strings"
 	"time"
-
-	"github.com/diskfs/go-diskfs/backend"
-	"github.com/diskfs/go-diskfs/filesystem"
 )
 
 // MsdosMediaType is the (mostly unused) media type. However, we provide and export the known constants for it.
@@ -61,7 +58,7 @@ type FileSystem struct {
 	bytesPerCluster int
 	size            int64
 	start           int64
-	backend         backend.Storage
+	backend         io.ReaderAt
 }
 
 // Equal compare if two filesystems are equal
@@ -95,7 +92,7 @@ func (fs *FileSystem) Equal(a *FileSystem) bool {
 //
 // If the provided blocksize is 0, it will use the default of 512 bytes. If it is any number other than 0
 // or 512, it will return an error.
-func Create(b backend.Storage, size, start, blocksize int64, volumeLabel string, reproducible bool) (*FileSystem, error) {
+func Create(b io.ReaderAt, size, start, blocksize int64, volumeLabel string, reproducible bool) (*FileSystem, error) {
 	// blocksize must be <=0 or exactly SectorSize512 or error
 	if blocksize != int64(SectorSize512) && blocksize > 0 {
 		return nil, fmt.Errorf("blocksize for FAT32 must be either 512 bytes or 0, not %d", blocksize)
@@ -124,9 +121,9 @@ func Create(b backend.Storage, size, start, blocksize int64, volumeLabel string,
 	fsisPrimarySector := uint16(1)
 	backupBootSector := uint16(6)
 
-	writableFile, err := b.Writable()
-	if err != nil {
-		return nil, err
+	writableFile, ok := b.(io.WriterAt)
+	if !ok {
+		return nil, ErrReadonlyFilesystem
 	}
 
 	/*
@@ -341,7 +338,7 @@ func Create(b backend.Storage, size, start, blocksize int64, volumeLabel string,
 //
 // If the provided blocksize is 0, it will use the default of 512 bytes. The blocksize parameter is only used
 // for validation; the actual bytes per sector is read from the filesystem's BPB.
-func Read(b backend.Storage, size, start, blocksize int64) (*FileSystem, error) {
+func Read(b io.ReaderAt, size, start, blocksize int64) (*FileSystem, error) {
 	// blocksize validation - we accept 0 (default), 512, or 4096 (for 4k native disks)
 	// The actual bytesPerSector is read from the BPB regardless of this parameter
 	if blocksize != 0 && blocksize != int64(SectorSize512) && blocksize != 4096 {
@@ -426,9 +423,9 @@ func (fs *FileSystem) writeBootSector() error {
 			return nil, fmt.Errorf("error writing MS-DOS Boot Sector: %v", err)
 		}
 	*/
-	writableFile, err := fs.backend.Writable()
-	if err != nil {
-		return err
+	writableFile, ok := fs.backend.(io.WriterAt)
+	if !ok {
+		return ErrReadonlyFilesystem
 	}
 
 	b, err := fs.bootSector.toBytes()
@@ -467,9 +464,9 @@ func (fs *FileSystem) writeFsis() error {
 	fsisPrimary := int64(fsInformationSector) * int64(bytesPerSector)
 
 	fsisBytes := fs.fsis.toBytes()
-	writableFile, err := fs.backend.Writable()
-	if err != nil {
-		return err
+	writableFile, ok := fs.backend.(io.WriterAt)
+	if !ok {
+		return ErrReadonlyFilesystem
 	}
 
 	if _, err := writableFile.WriteAt(fsisBytes, fsisPrimary+fs.start); err != nil {
@@ -492,9 +489,9 @@ func (fs *FileSystem) writeFat() error {
 	fatSecondaryStart := fatPrimaryStart + uint64(fs.table.size)
 
 	fatBytes := fs.table.bytes()
-	writableFile, err := fs.backend.Writable()
-	if err != nil {
-		return err
+	writableFile, ok := fs.backend.(io.WriterAt)
+	if !ok {
+		return ErrReadonlyFilesystem
 	}
 
 	if _, err := writableFile.WriteAt(fatBytes, int64(fatPrimaryStart)+fs.start); err != nil {
@@ -508,17 +505,9 @@ func (fs *FileSystem) writeFat() error {
 	return nil
 }
 
-// interface guard
-var _ filesystem.FileSystem = (*FileSystem)(nil)
-
 // Do cleaning job for fat32. Note that fat32 does not have side-effects so we do not do anything.
 func (fs *FileSystem) Close() error {
 	return nil
-}
-
-// Type returns the type code for the filesystem. Always returns filesystem.TypeFat32
-func (fs *FileSystem) Type() filesystem.Type {
-	return filesystem.TypeFat32
 }
 
 // Mkdir make a directory at the given path. It is equivalent to `mkdir -p`, i.e. idempotent, in that:
@@ -529,22 +518,6 @@ func (fs *FileSystem) Mkdir(p string) error {
 	_, _, err := fs.readDirWithMkdir(p, true)
 	// we are not interesting in returning the entries
 	return err
-}
-
-// creates a filesystem node (file, device special file, or named pipe) named pathname,
-// with attributes specified by mode and dev
-func (fs *FileSystem) Mknod(_ string, _ uint32, _ int) error {
-	return filesystem.ErrNotSupported
-}
-
-// creates a new link (also known as a hard link) to an existing file.
-func (fs *FileSystem) Link(_, _ string) error {
-	return filesystem.ErrNotSupported
-}
-
-// creates a symbolic link named linkpath which contains the string target.
-func (fs *FileSystem) Symlink(_, _ string) error {
-	return filesystem.ErrNotSupported
 }
 
 // Chtimes changes the file creation, access and modification times
@@ -582,18 +555,6 @@ func (fs *FileSystem) Chtimes(p string, ctime, atime, mtime time.Time) error {
 	entry.createTime = ctime
 	// write the directory entries to disk
 	return fs.writeDirectoryEntries(parentDir)
-}
-
-// Chmod changes the mode of the named file to mode. If the file is a symbolic link,
-// it changes the mode of the link's target.
-func (fs *FileSystem) Chmod(_ string, _ os.FileMode) error {
-	return filesystem.ErrNotSupported
-}
-
-// Chown changes the numeric uid and gid of the named file. If the file is a symbolic link,
-// it changes the uid and gid of the link's target. A uid or gid of -1 means to not change that value
-func (fs *FileSystem) Chown(_ string, _, _ int) error {
-	return filesystem.ErrNotSupported
 }
 
 // ReadDir return the contents of a given directory in a given filesystem.
@@ -639,7 +600,7 @@ func (fs *FileSystem) Open(p string) (iofs.File, error) {
 // accepts normal os.OpenFile flags
 //
 // returns an error if the file does not exist
-func (fs *FileSystem) OpenFile(p string, flag int) (filesystem.File, error) {
+func (fs *FileSystem) OpenFile(p string, flag int) (*File, error) {
 	// get the path
 	dir := path.Dir(p)
 	filename := path.Base(p)
@@ -1025,9 +986,9 @@ func (fs *FileSystem) writeDirectoryEntries(dir *Directory) error {
 		return fmt.Errorf("could not create a valid byte stream for a FAT32 Entries: %w", err)
 	}
 
-	writableFile, err := fs.backend.Writable()
-	if err != nil {
-		return err
+	writableFile, ok := fs.backend.(io.WriterAt)
+	if !ok {
+		return ErrReadonlyFilesystem
 	}
 	// now have to expand with zeros to the a multiple of cluster lengths
 	// how many clusters do we need, how many do we have?

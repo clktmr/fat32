@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	"github.com/diskfs/go-diskfs/backend"
-	"github.com/diskfs/go-diskfs/partition/part"
 )
 
-var _ part.Partition = &Partition{}
+type IncompletePartitionWriteError struct {
+	writtenBytes uint64
+	totalBytes   uint64
+}
+
+func (e *IncompletePartitionWriteError) Error() string {
+	return fmt.Errorf("wrote %d bytes to partition of size %d", e.writtenBytes, e.totalBytes).Error()
+}
 
 // Partition represents the structure of a single partition on the disk
 // note that start and end cylinder, head, sector (CHS) are ignored, for the most part.
@@ -133,7 +137,7 @@ func partitionFromBytes(index int, b []byte, logicalSectorSize, physicalSectorSi
 
 // WriteContents fills the partition with the contents provided
 // reads from beginning of reader to exactly size of partition in bytes
-func (p *Partition) WriteContents(f backend.WritableFile, contents io.Reader) (uint64, error) {
+func (p *Partition) WriteContents(f io.WriterAt, contents io.Reader) (uint64, error) {
 	pss, lss := p.sectorSizes()
 	total := uint64(0)
 
@@ -169,14 +173,14 @@ func (p *Partition) WriteContents(f backend.WritableFile, contents io.Reader) (u
 	}
 	// did the total written equal the size of the partition?
 	if total != uint64(size) {
-		return total, part.NewIncompletePartitionWriteError(total, uint64(size))
+		return total, &IncompletePartitionWriteError{total, uint64(size)}
 	}
 	return total, nil
 }
 
 // readContents reads the contents of the partition into a writer
 // streams the entire partition to the writer
-func (p *Partition) ReadContents(f backend.File, out io.Writer) (int64, error) {
+func (p *Partition) ReadContents(f io.ReaderAt, out io.Writer) (int64, error) {
 	pss, lss := p.sectorSizes()
 	total := int64(0)
 	// chunks of physical sector size for efficient writing

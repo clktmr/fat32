@@ -8,10 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diskfs/go-diskfs/backend/file"
-	"github.com/diskfs/go-diskfs/testhelper"
 	"github.com/google/go-cmp/cmp"
 )
+
+// fakeBackend implements io.ReaderAt and io.WriterAt used for testing to enable
+// stubbing out files
+type fakeBackend struct {
+	Reader func(b []byte, offset int64) (int, error)
+	Writer func(b []byte, offset int64) (int, error)
+}
+
+func (f *fakeBackend) ReadAt(b []byte, offset int64) (int, error)  { return f.Reader(b, offset) }
+func (f *fakeBackend) WriteAt(b []byte, offset int64) (int, error) { return f.Writer(b, offset) }
 
 func tmpFat32() (*os.File, error) {
 	filename := "fat32_test"
@@ -98,12 +106,11 @@ func getValidFat32FSSmall() *FileSystem {
 		},
 		bytesPerCluster: 512,
 		dataStart:       178176,
-		backend: file.New(&testhelper.FileImpl{
-			//nolint:revive // unused parameter, keeping name makes it easier to use in the future
+		backend: &fakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return len(b), nil
 			},
-		}, false),
+		},
 		fsis: FSInformationSector{},
 		bootSector: msDosBootSector{
 			biosParameterBlock: &dos71EBPB{
@@ -164,7 +171,7 @@ func TestFat32ReadDirectory(t *testing.T) {
 	defer testFile.Close()
 	fs := &FileSystem{
 		table:           *getValidFat32Table(),
-		backend:         file.New(testFile, false),
+		backend:         testFile,
 		bytesPerCluster: int(fsInfo.bytesPerCluster),
 		dataStart:       fsInfo.dataStartBytes,
 	}
@@ -365,8 +372,7 @@ func TestFat32ReadDirWithMkdir(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		fs.backend = file.New(&testhelper.FileImpl{
-			//nolint:revive // unused parameter, keeping name makes it easier to use in the future
+		fs.backend = &fakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return len(b), nil
 			},
@@ -374,7 +380,7 @@ func TestFat32ReadDirWithMkdir(t *testing.T) {
 				copy(b, datab[offset:])
 				return len(b), nil
 			},
-		}, false)
+		}
 
 		dir, entries, err := fs.readDirWithMkdir(tt.path, tt.doMake)
 		switch {
@@ -405,19 +411,15 @@ func TestChtimes(t *testing.T) {
 		t.Fatalf("error getting file info for tmpfile %s: %v", f.Name(), err)
 	}
 
-	fs, err := Create(file.New(f, false), fileInfo.Size(), 0, 512, "TESTVOL", false)
+	fs, err := Create(f, fileInfo.Size(), 0, 512, "TESTVOL", false)
 	if err != nil {
 		t.Fatalf("error reading fat32 filesystem from %s: %v", f.Name(), err)
 	}
 	newfile := "/testfile"
 	mode := os.O_RDWR | os.O_CREATE
-	fileIntf, err := fs.OpenFile(newfile, mode)
+	fileImpl, err := fs.OpenFile(newfile, mode)
 	if err != nil {
 		t.Fatalf("error opening file %s: %v", newfile, err)
-	}
-	fileImpl, ok := fileIntf.(*File)
-	if !ok {
-		t.Fatalf("could not cast to fat32.File")
 	}
 	ctime := fileImpl.createTime.Add(-30 * time.Minute)
 	atime := fileImpl.accessTime.Add(60 * time.Minute)
@@ -428,13 +430,9 @@ func TestChtimes(t *testing.T) {
 	}
 	// now check that it was updated
 	// get existing times
-	fileIntf, err = fs.OpenFile(newfile, os.O_RDONLY)
+	fileImpl, err = fs.OpenFile(newfile, os.O_RDONLY)
 	if err != nil {
 		t.Fatalf("error opening file %s: %v", newfile, err)
-	}
-	fileImpl, ok = fileIntf.(*File)
-	if !ok {
-		t.Fatalf("could not cast to fat32.File")
 	}
 	// fat32 only supports dates for atime, so zero out everything else
 	atime = time.Date(atime.Year(), atime.Month(), atime.Day(), 0, 0, 0, 0, atime.UTC().Location())

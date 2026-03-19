@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
-	"github.com/diskfs/go-diskfs/backend"
-	"github.com/diskfs/go-diskfs/partition/part"
+	"io"
 )
 
 // Table represents an MBR partition table to be applied to a disk or read from a disk
@@ -126,15 +124,10 @@ func formatPartitionUUID(ptUUID string, index int) string {
 	return fmt.Sprintf("%.33s-%02x", ptUUID, index)
 }
 
-// Type report the type of table, always the string "mbr"
-func (t *Table) Type() string {
-	return "mbr"
-}
-
 // Read read a partition table from a disk, given the logical block size and physical block size
 //
 //nolint:unused,revive // not used in MBR, but it is important to implement the interface
-func Read(f backend.File, logicalBlockSize, physicalBlockSize int) (*Table, error) {
+func Read(f io.ReaderAt, logicalBlockSize, physicalBlockSize int) (*Table, error) {
 	// read the data off of the disk
 	b := make([]byte, mbrSize)
 	read, err := f.ReadAt(b, 0)
@@ -171,7 +164,7 @@ func (t *Table) toBytes() []byte {
 // Must be passed the backend.WritableFile to write to and the size of the disk
 //
 //nolint:unused,revive // not used in MBR, but it is important to implement the interface
-func (t *Table) Write(f backend.WritableFile, size int64) error {
+func (t *Table) Write(f io.WriterAt, size int64) error {
 	b := t.toBytes()
 
 	written, err := f.WriteAt(b, partitionEntriesStart)
@@ -184,25 +177,6 @@ func (t *Table) Write(f backend.WritableFile, size int64) error {
 	return nil
 }
 
-func (t *Table) GetPartitions() []part.Partition {
-	// each Partition matches the part.Partition interface, but golang does not accept passing them in a slice
-	parts := make([]part.Partition, len(t.Partitions))
-	for i, p := range t.Partitions {
-		parts[i] = p
-	}
-	return parts
-}
-
-// Verify will attempt to evaluate the headers
-//
-//nolint:unused,revive // not used in MBR, but it is important to implement the interface
-func (t *Table) Verify(f backend.File, diskSize uint64) error {
-	return nil
-}
-
-// Repair will attempt to repair a broken Master Boot Record
-//
-//nolint:unused,revive // not used in MBR, but it is important to implement the interface
-func (t *Table) Repair(diskSize uint64) error {
-	return nil
+func (t *Table) GetPartitions() []*Partition {
+	return t.Partitions
 }
