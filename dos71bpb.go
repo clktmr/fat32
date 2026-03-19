@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"regexp"
+	"strings"
 )
 
 const (
@@ -117,9 +117,8 @@ func dos71EBPBFromBytes(b []byte) (*dos71EBPB, int, error) {
 	case longDos71EBPB:
 		size = 79
 		// remove padding from each
-		re := regexp.MustCompile(" +$")
-		bpb.volumeLabel = re.ReplaceAllString(string(b[60:71]), "")
-		bpb.fileSystemType = re.ReplaceAllString(string(b[71:79]), "")
+		bpb.volumeLabel = strings.TrimRight(string(b[60:71]), " ")
+		bpb.fileSystemType = strings.TrimRight(string(b[71:79]), " ")
 	default:
 		return nil, size, fmt.Errorf("unknown DOS 7.1 EBPB Signature: %v", extendedSignature)
 	}

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	iofs "io/fs"
-	"regexp"
 	"strings"
 	"time"
 
@@ -199,9 +198,8 @@ byteLoop:
 		accessDate := binary.LittleEndian.Uint16(b[i+18 : i+20])
 		modifyTime := binary.LittleEndian.Uint16(b[i+22 : i+24])
 		modifyDate := binary.LittleEndian.Uint16(b[i+24 : i+26])
-		re := regexp.MustCompile(" +$")
-		sfn := re.ReplaceAllString(string(b[i:i+8]), "")
-		extension := re.ReplaceAllString(string(b[i+8:i+11]), "")
+		sfn := strings.TrimRight(string(b[i:i+8]), " ")
+		extension := strings.TrimRight(string(b[i+8:i+11]), " ")
 		isSubdirectory := b[i+11]&0x10 == 0x10
 		isArchiveDirty := b[i+11]&0x20 == 0x20
 		isVolumeLabel := b[i+11]&0x08 == 0x08
