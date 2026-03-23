@@ -2,7 +2,6 @@ package fat32
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	iofs "io/fs"
 	"os"
@@ -44,7 +43,7 @@ func (fl *File) GetClusterChain() ([]uint32, error) {
 	fs := fl.filesystem
 	clusters, err := fs.getClusterList(fl.clusterLocation)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get list of clusters for file: %v", err)
+		return nil, WrapError("unable to get list of clusters for file", err)
 	}
 
 	return clusters, nil
@@ -112,7 +111,7 @@ func (fl *File) Read(b []byte) (int, error) {
 	file := fs.backend
 	clusters, err := fs.getClusterList(fl.clusterLocation)
 	if err != nil {
-		return totalRead, fmt.Errorf("unable to get list of clusters for file: %v", err)
+		return totalRead, WrapError("unable to get list of clusters for file", err)
 	}
 	clusterIndex := 0
 
@@ -200,7 +199,7 @@ func (fl *File) Write(p []byte) (int, error) {
 	// 1- ensure we have space and clusters
 	clusters, err := fs.allocateSpace(uint64(newSize), fl.clusterLocation)
 	if err != nil {
-		return 0x00, fmt.Errorf("unable to allocate clusters for file: %v", err)
+		return 0x00, WrapError("unable to allocate clusters for file", err)
 	}
 
 	// update the directory entry size for the file
@@ -227,7 +226,7 @@ func (fl *File) Write(p []byte) (int, error) {
 			}
 			_, err := writableFile.WriteAt(p[0:toWrite], offset+fs.start)
 			if err != nil {
-				return totalWritten, fmt.Errorf("unable to write to file: %v", err)
+				return totalWritten, WrapError("unable to write to file", err)
 			}
 			totalWritten += int(toWrite)
 			clusterIndex++
@@ -243,7 +242,7 @@ func (fl *File) Write(p []byte) (int, error) {
 		offset := int64(start) + int64(clusters[i]-2)*int64(bytesPerCluster)
 		_, err := writableFile.WriteAt(p[totalWritten:totalWritten+toWrite], offset+fs.start)
 		if err != nil {
-			return totalWritten, fmt.Errorf("unable to write to file: %v", err)
+			return totalWritten, WrapError("unable to write to file", err)
 		}
 		totalWritten += toWrite
 	}
@@ -253,7 +252,7 @@ func (fl *File) Write(p []byte) (int, error) {
 	// update the parent that we have changed the file size
 	err = fs.writeDirectoryEntries(fl.parent)
 	if err != nil {
-		return 0, fmt.Errorf("error writing directory entries to disk: %v", err)
+		return 0, WrapError("error writing directory entries to disk", err)
 	}
 
 	return totalWritten, nil
@@ -274,7 +273,7 @@ func (fl *File) Seek(offset int64, whence int) (int64, error) {
 		newOffset = fl.offset + offset
 	}
 	if newOffset < 0 {
-		return fl.offset, fmt.Errorf("cannot set offset %d before start of file", offset)
+		return fl.offset, errors.New("cannot set offset before start of file")
 	}
 	fl.offset = newOffset
 	return fl.offset, nil

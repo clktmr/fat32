@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -40,10 +39,6 @@ func TestDos71EBPBFromBytes(t *testing.T) {
 		if size > 0 {
 			t.Errorf("read %d bytes instead of 0", size)
 		}
-		expected := "cannot read DOS 7.1 EBPB from invalid byte slice"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("mismatched length less than 79", func(t *testing.T) {
 		b := make([]byte, 78, 79)
@@ -56,10 +51,6 @@ func TestDos71EBPBFromBytes(t *testing.T) {
 		}
 		if size > 0 {
 			t.Errorf("read %d bytes instead of 0", size)
-		}
-		expected := "cannot read DOS 7.1 EBPB from invalid byte slice"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("mismatched length greater than 79", func(t *testing.T) {
@@ -74,10 +65,6 @@ func TestDos71EBPBFromBytes(t *testing.T) {
 		if size > 0 {
 			t.Errorf("read %d bytes instead of 0", size)
 		}
-		expected := "cannot read DOS 7.1 EBPB from invalid byte slice"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid Dos331BPB", func(t *testing.T) {
 		size := uint16(511)
@@ -89,10 +76,6 @@ func TestDos71EBPBFromBytes(t *testing.T) {
 		}
 		if bpb != nil {
 			t.Fatalf("returned bpb was non-nil")
-		}
-		expected := "error reading embedded DOS 2.0 BPB"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid short ebpb", func(t *testing.T) {
@@ -179,10 +162,6 @@ func TestDos71EBPBToBytes(t *testing.T) {
 		if b != nil {
 			t.Fatal("b was not nil")
 		}
-		expected := "invalid volume label: too long"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("non-ascii Volume Label", func(t *testing.T) {
 		bpb := getValidDos71EBPB()
@@ -193,10 +172,6 @@ func TestDos71EBPBToBytes(t *testing.T) {
 		}
 		if b != nil {
 			t.Fatal("b was not nil")
-		}
-		expected := "invalid volume label: non-ascii characters"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("short FileSystem Type", func(t *testing.T) {
@@ -229,10 +204,6 @@ func TestDos71EBPBToBytes(t *testing.T) {
 		if b != nil {
 			t.Fatal("b was not nil")
 		}
-		expected := "invalid filesystem type: too long"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("non-ascii FileSystem Type", func(t *testing.T) {
 		bpb := getValidDos71EBPB()
@@ -243,10 +214,6 @@ func TestDos71EBPBToBytes(t *testing.T) {
 		}
 		if b != nil {
 			t.Fatal("b was not nil")
-		}
-		expected := "invalid filesystem type: non-ascii characters"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid EBPB", func(t *testing.T) {

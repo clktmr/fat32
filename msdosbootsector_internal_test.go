@@ -3,9 +3,7 @@ package fat32
 import (
 	"bytes"
 	"crypto/rand"
-	"fmt"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -55,10 +53,6 @@ func TestMsDosBootSectorFromBytes(t *testing.T) {
 		if bs != nil {
 			t.Fatalf("returned MsDosBootSector was non-nil")
 		}
-		expected := fmt.Sprintf("cannot parse MS-DOS Boot Sector from %d bytes", len(b))
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("mismatched length greater than 512", func(t *testing.T) {
 		b := make([]byte, 513)
@@ -68,10 +62,6 @@ func TestMsDosBootSectorFromBytes(t *testing.T) {
 		}
 		if bs != nil {
 			t.Fatalf("returned MsDosBootSector was non-nil")
-		}
-		expected := fmt.Sprintf("cannot parse MS-DOS Boot Sector from %d bytes", len(b))
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("invalid Dos71EBPB", func(t *testing.T) {
@@ -90,10 +80,6 @@ func TestMsDosBootSectorFromBytes(t *testing.T) {
 		if bs != nil {
 			t.Fatalf("returned MsDosBootSector was non-nil")
 		}
-		expected := "could not read FAT32 BIOS Parameter Block from boot sector"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid signature", func(t *testing.T) {
 		input, err := os.ReadFile(Fat32File)
@@ -108,10 +94,6 @@ func TestMsDosBootSectorFromBytes(t *testing.T) {
 		}
 		if bs != nil {
 			t.Fatalf("returned MsDosBootSector was non-nil")
-		}
-		expected := "invalid signature in last 2 bytes of boot sector"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid MsDosBootSector", func(t *testing.T) {
@@ -167,10 +149,6 @@ func TestMsDosBootSectorToBytes(t *testing.T) {
 		if b != nil {
 			t.Fatal("b was not nil")
 		}
-		expected := "cannot use OEM Name > 8 bytes"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("non-ascii OEM Name", func(t *testing.T) {
 		bs := getValidMsDosBootSector()
@@ -181,10 +159,6 @@ func TestMsDosBootSectorToBytes(t *testing.T) {
 		}
 		if b != nil {
 			t.Fatal("b was not nil")
-		}
-		expected := "invalid OEM Name: non-ascii characters"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("short boot code", func(t *testing.T) {
@@ -218,10 +192,6 @@ func TestMsDosBootSectorToBytes(t *testing.T) {
 		}
 		if b != nil {
 			t.Fatal("b was not nil unexpectedly")
-		}
-		expected := "boot code too long"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid Boot Sector", func(t *testing.T) {

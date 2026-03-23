@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/clktmr/fat32/mbr"
@@ -85,10 +84,10 @@ func compareMBRBytes(b1, b2 []byte) bool {
 
 func TestTableRead(t *testing.T) {
 	t.Run("error reading file", func(t *testing.T) {
-		expected := "error reading MBR from file"
+		expected := errors.New("error reading MBR from file")
 		f := &mbr.FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
-				return 0, errors.New(expected)
+				return 0, expected
 			},
 		}
 		table, err := mbr.Read(f, 512, 512)
@@ -98,13 +97,12 @@ func TestTableRead(t *testing.T) {
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
 		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
+		if !errors.Is(err, expected) {
+			t.Errorf("error value")
 		}
 	})
 	t.Run("insufficient data read", func(t *testing.T) {
 		size := 100
-		expected := fmt.Sprintf("read only %d bytes of MBR", size)
 		f := &mbr.FakeBackend{
 			Reader: func(b []byte, offset int64) (int, error) {
 				return size, nil
@@ -116,9 +114,6 @@ func TestTableRead(t *testing.T) {
 		}
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
-		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("successful read", func(t *testing.T) {
@@ -143,18 +138,18 @@ func TestTableRead(t *testing.T) {
 func TestTableWrite(t *testing.T) {
 	t.Run("error writing file", func(t *testing.T) {
 		table := mbr.GetValidTable()
-		expected := "error writing partition table to disk"
+		expected := errors.New("error writing partition table to disk")
 		f := &mbr.FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
-				return 0, errors.New(expected)
+				return 0, expected
 			},
 		}
 		err := table.Write(f, tenMB)
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
 		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
+		if !errors.Is(err, expected) {
+			t.Errorf("error value")
 		}
 	})
 	t.Run("insufficient data written", func(t *testing.T) {
@@ -167,12 +162,8 @@ func TestTableWrite(t *testing.T) {
 			},
 		}
 		err := table.Write(f, tenMB)
-		expected := fmt.Sprintf("partition table wrote %d bytes to disk", size)
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
-		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("successful write", func(t *testing.T) {

@@ -2,7 +2,7 @@ package fat32
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 )
 
 // FSInfoSectorSignature is the signature for every FAT32 FSInformationSector
@@ -34,7 +34,7 @@ type FSInformationSector struct {
 func fsInformationSectorFromBytes(b []byte) (*FSInformationSector, error) {
 	bLen := len(b)
 	if bLen != int(SectorSize512) {
-		return nil, fmt.Errorf("cannot read FAT32 FS Information Sector from %d bytes instead of expected %d", bLen, SectorSize512)
+		return nil, errors.New("invalid FAT32 FS Information Sector length")
 	}
 
 	fsis := FSInformationSector{}
@@ -45,13 +45,13 @@ func fsInformationSectorFromBytes(b []byte) (*FSInformationSector, error) {
 	signatureEnd := binary.BigEndian.Uint32(b[508:512])
 
 	if signatureStart != uint32(fsInfoSectorSignatureStart) {
-		return nil, fmt.Errorf("invalid signature at beginning of FAT 32 Filesystem Information Sector: %x", signatureStart)
+		return nil, errors.New("invalid signature at beginning of FAT 32 Filesystem Information Sector")
 	}
 	if signatureMid != uint32(fsInfoSectorSignatureMid) {
-		return nil, fmt.Errorf("invalid signature at middle of FAT 32 Filesystem Information Sector: %x", signatureMid)
+		return nil, errors.New("invalid signature at middle of FAT 32 Filesystem Information Sector")
 	}
 	if signatureEnd != uint32(fsInfoSectorSignatureEnd) {
-		return nil, fmt.Errorf("invalid signature at end of FAT 32 Filesystem Information Sector: %x", signatureEnd)
+		return nil, errors.New("invalid signature at end of FAT 32 Filesystem Information Sector")
 	}
 
 	// validated, so just read the data

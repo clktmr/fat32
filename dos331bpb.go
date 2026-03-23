@@ -3,7 +3,6 @@ package fat32
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 )
 
 // dos331BPB is the DOS 3.31 BIOS Parameter Block
@@ -37,7 +36,7 @@ func dos331BPBFromBytes(b []byte) (*dos331BPB, error) {
 	bpb := dos331BPB{}
 	dos20bpb, err := dos20BPBFromBytes(b[0:13])
 	if err != nil {
-		return nil, fmt.Errorf("error reading embedded DOS 2.0 BPB: %v", err)
+		return nil, WrapError("error reading embedded DOS 2.0 BPB", err)
 	}
 	bpb.dos20BPB = dos20bpb
 	bpb.sectorsPerTrack = binary.LittleEndian.Uint16(b[13:15])

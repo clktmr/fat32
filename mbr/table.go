@@ -3,8 +3,11 @@ package mbr
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"io"
+	"strconv"
+
+	"github.com/clktmr/fat32"
 )
 
 // Table represents an MBR partition table to be applied to a disk or read from a disk
@@ -72,13 +75,13 @@ func (t *Table) Equal(t2 *Table) bool {
 func tableFromBytes(b []byte) (*Table, error) {
 	// check length
 	if len(b) != mbrSize {
-		return nil, fmt.Errorf("data for partition was %d bytes instead of expected %d", len(b), mbrSize)
+		return nil, errors.New("invalid size for partition data")
 	}
 
 	// validate signature
 	mbrSignature := b[signatureStart:]
 	if !bytes.Equal(mbrSignature, getMbrSignature()) {
-		return nil, fmt.Errorf("invalid MBR Signature %v", mbrSignature)
+		return nil, errors.New("invalid MBR Signature")
 	}
 
 	ptUUID := readPartitionTableUUID(b)
@@ -90,7 +93,7 @@ func tableFromBytes(b []byte) (*Table, error) {
 		end := start + partitionEntrySize
 		p, err := partitionFromBytes(i+1, b[start:end], logicalSectorSize, physicalSectorSize)
 		if err != nil {
-			return nil, fmt.Errorf("error reading partition entry %d: %v", i, err)
+			return nil, fat32.WrapError("error reading partition entry "+strconv.Itoa(i), err)
 		}
 		p.partitionUUID = formatPartitionUUID(ptUUID, i+1)
 		parts = append(parts, p)
@@ -108,7 +111,7 @@ func tableFromBytes(b []byte) (*Table, error) {
 
 func readPartitionTableUUID(b []byte) string {
 	ptUUID := b[partitionTableUUIDStart:partitionTableUUIDEnd]
-	return fmt.Sprintf("%x", binary.LittleEndian.Uint32(ptUUID))
+	return strconv.FormatUint(uint64(binary.LittleEndian.Uint32(ptUUID)), 16)
 }
 
 // UUID returns the partition table UUID used to identify disks
@@ -121,7 +124,14 @@ func (t *Table) UUID() string {
 // Format string taken from libblkid:
 // https://github.com/util-linux/util-linux/blob/master/libblkid/src/partitions/partitions.c#L1387C42-L1387C52
 func formatPartitionUUID(ptUUID string, index int) string {
-	return fmt.Sprintf("%.33s-%02x", ptUUID, index)
+	if len(ptUUID) > 33 {
+		ptUUID = ptUUID[:33]
+	}
+	h := strconv.FormatInt(int64(index), 16)
+	if len(h) == 1 {
+		h = "0" + h
+	}
+	return ptUUID + "-" + h
 }
 
 // Read read a partition table from a disk, given the logical block size and physical block size
@@ -132,10 +142,10 @@ func Read(f io.ReaderAt, logicalBlockSize, physicalBlockSize int) (*Table, error
 	b := make([]byte, mbrSize)
 	read, err := f.ReadAt(b, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error reading MBR from file: %v", err)
+		return nil, fat32.WrapError("error reading MBR from file", err)
 	}
 	if read != len(b) {
-		return nil, fmt.Errorf("read only %d bytes of MBR from file instead of expected %d", read, len(b))
+		return nil, errors.New("read incomplete MBR")
 	}
 	return tableFromBytes(b)
 }
@@ -169,10 +179,10 @@ func (t *Table) Write(f io.WriterAt, size int64) error {
 
 	written, err := f.WriteAt(b, partitionEntriesStart)
 	if err != nil {
-		return fmt.Errorf("error writing partition table to disk: %v", err)
+		return fat32.WrapError("error writing partition table to disk", err)
 	}
 	if written != len(b) {
-		return fmt.Errorf("partition table wrote %d bytes to disk instead of the expected %d", written, len(b))
+		return errors.New("incomplete partition table write")
 	}
 	return nil
 }

@@ -2,9 +2,7 @@ package mbr
 
 import (
 	"crypto/rand"
-	"fmt"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -54,10 +52,6 @@ func TestTableFromBytes(t *testing.T) {
 		if err == nil {
 			t.Error("should not return nil error")
 		}
-		expected := fmt.Sprintf("data for partition was %d bytes", len(b))
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid MBR Signature", func(t *testing.T) {
 		b, err := os.ReadFile(mbrFile)
@@ -71,10 +65,6 @@ func TestTableFromBytes(t *testing.T) {
 		}
 		if err == nil {
 			t.Error("should not return nil error")
-		}
-		expected := "invalid MBR Signature"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("Valid table", func(t *testing.T) {

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
+	"strconv"
+
+	"github.com/clktmr/fat32"
 )
 
 type IncompletePartitionWriteError struct {
@@ -14,7 +16,7 @@ type IncompletePartitionWriteError struct {
 }
 
 func (e *IncompletePartitionWriteError) Error() string {
-	return fmt.Errorf("wrote %d bytes to partition of size %d", e.writtenBytes, e.totalBytes).Error()
+	return "wrote " + strconv.Itoa(int(e.writtenBytes)) + " bytes to partition of size " + strconv.Itoa(int(e.totalBytes))
 }
 
 // Partition represents the structure of a single partition on the disk
@@ -106,7 +108,7 @@ func (p *Partition) toBytes() []byte {
 //nolint:unparam // this always receives logicalSectorSize=512, but since it can be different, we want to leave it as a param
 func partitionFromBytes(index int, b []byte, logicalSectorSize, physicalSectorSize int) (*Partition, error) {
 	if len(b) != partitionEntrySize {
-		return nil, fmt.Errorf("data for partition was %d bytes instead of expected %d", len(b), partitionEntrySize)
+		return nil, errors.New("invalid size for partition data")
 	}
 	var bootable bool
 	switch b[0] {
@@ -151,17 +153,17 @@ func (p *Partition) WriteContents(f io.WriterAt, contents io.Reader) (uint64, er
 	for {
 		read, err := contents.Read(b)
 		if err != nil && err != io.EOF {
-			return total, fmt.Errorf("could not read contents to pass to partition: %v", err)
+			return total, fat32.WrapError("could not read contents to pass to partition", err)
 		}
 		tmpTotal := uint64(read) + total
 		if tmpTotal > uint64(size) {
-			return total, fmt.Errorf("requested to write at least %d bytes to partition but maximum size is %d", tmpTotal, size)
+			return total, errors.New("end of partition")
 		}
 		var written int
 		if read > 0 {
 			written, err = f.WriteAt(b[:read], int64(start)+int64(total))
 			if err != nil {
-				return total, fmt.Errorf("error writing to file: %v", err)
+				return total, fat32.WrapError("error writing to file", err)
 			}
 			// increment our total
 			total += uint64(written)
@@ -193,7 +195,7 @@ func (p *Partition) ReadContents(f io.ReaderAt, out io.Writer) (int64, error) {
 	for {
 		read, err := f.ReadAt(b, int64(start)+total)
 		if err != nil && err != io.EOF {
-			return total, fmt.Errorf("error reading from file: %v", err)
+			return total, fat32.WrapError("error reading from file", err)
 		}
 		if read > 0 {
 			_, _ = out.Write(b[:read])

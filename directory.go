@@ -1,7 +1,7 @@
 package fat32
 
 import (
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -85,7 +85,7 @@ func (d *Directory) removeEntry(name string) error {
 	}
 
 	if removeEntryIndex == -1 {
-		return fmt.Errorf("cannot find entry for name %s", name)
+		return errors.New("cannot find entry for name " + name)
 	}
 
 	// remove the entry from the list
@@ -119,7 +119,7 @@ func (d *Directory) renameEntry(oldFileName, newFileName string) error {
 		newEntries = append(newEntries, entry)
 	}
 	if !isReplaced {
-		return fmt.Errorf("cannot find file entry for %s", oldFileName)
+		return errors.New("cannot find file entry for " + oldFileName)
 	}
 
 	d.entries = newEntries

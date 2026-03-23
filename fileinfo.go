@@ -1,7 +1,6 @@
 package fat32
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -82,7 +81,7 @@ func shortNameFromDirEntry(e *directoryEntry) string {
 		fileExtension = strings.ToLower(fileExtension)
 	}
 	if fileExtension != "" {
-		shortName = fmt.Sprintf("%s.%s", shortName, fileExtension)
+		shortName = shortName + "." + fileExtension
 	}
 	return shortName
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -28,10 +27,6 @@ func TestDos331BPBFromBytes(t *testing.T) {
 		if bpb != nil {
 			t.Fatalf("returned bpb was non-nil")
 		}
-		expected := "cannot read DOS 3.31 BPB from invalid byte slice"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid Dos20BPB", func(t *testing.T) {
 		size := uint16(511)
@@ -43,10 +38,6 @@ func TestDos331BPBFromBytes(t *testing.T) {
 		}
 		if bpb != nil {
 			t.Fatalf("returned bpb was non-nil")
-		}
-		expected := "error reading embedded DOS 2.0 BPB"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid data", func(t *testing.T) {

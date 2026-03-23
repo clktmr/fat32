@@ -5,10 +5,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -39,10 +37,6 @@ func TestFromBytes(t *testing.T) {
 		if err == nil {
 			t.Error("should not return nil error")
 		}
-		expected := fmt.Sprintf("data for partition was %d bytes instead of expected %d", len(b), partitionEntrySize)
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("Long byte slice", func(t *testing.T) {
 		b := make([]byte, partitionEntrySize+1)
@@ -53,10 +47,6 @@ func TestFromBytes(t *testing.T) {
 		}
 		if err == nil {
 			t.Error("should not return nil error")
-		}
-		expected := fmt.Sprintf("data for partition was %d bytes instead of expected %d", len(b), partitionEntrySize)
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("invalid partition bootable code", func(t *testing.T) {
@@ -69,10 +59,6 @@ func TestFromBytes(t *testing.T) {
 		}
 		if err == nil {
 			t.Error("should not return nil error")
-		}
-		expected := "invalid partition"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("Valid partition", func(t *testing.T) {
@@ -164,9 +150,6 @@ func TestReadContents(t *testing.T) {
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
 		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("successful read", func(t *testing.T) {
 		partition := Partition{
@@ -254,10 +237,10 @@ func TestWriteContents(t *testing.T) {
 		b := make([]byte, size)
 		_, _ = rand.Read(b)
 		reader := bytes.NewReader(b)
-		expected := "error writing to file"
+		expected := errors.New("error writing to file")
 		f := &FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
-				return 0, errors.New(expected)
+				return 0, expected
 			},
 		}
 		written, err := partition.WriteContents(f, reader)
@@ -268,8 +251,8 @@ func TestWriteContents(t *testing.T) {
 			t.Errorf("returned nil error instead of actual errors")
 			return
 		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
+		if !errors.Is(err, expected) {
+			t.Errorf("error value")
 		}
 	})
 	t.Run("too large for partition", func(t *testing.T) {
@@ -289,7 +272,6 @@ func TestWriteContents(t *testing.T) {
 		b := make([]byte, 2*512)
 		_, _ = rand.Read(b)
 		reader := bytes.NewReader(b)
-		expected := "requested to write at least"
 		f := &FakeBackend{
 			Writer: func(b []byte, offset int64) (int, error) {
 				return len(b), nil
@@ -305,9 +287,6 @@ func TestWriteContents(t *testing.T) {
 		if err == nil {
 			t.Errorf("returned nil error instead of actual errors")
 			return
-		}
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 

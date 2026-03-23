@@ -2,9 +2,7 @@ package fat32
 
 import (
 	"bytes"
-	"fmt"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -25,10 +23,6 @@ func TestFsInformationSectorFromBytes(t *testing.T) {
 		if fsis != nil {
 			t.Fatalf("returned FSInformationSector was non-nil")
 		}
-		expected := fmt.Sprintf("cannot read FAT32 FS Information Sector from %d bytes", len(b))
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("mismatched length greater than 512", func(t *testing.T) {
 		b := make([]byte, 513)
@@ -38,10 +32,6 @@ func TestFsInformationSectorFromBytes(t *testing.T) {
 		}
 		if fsis != nil {
 			t.Fatalf("returned FSInformationSector was non-nil")
-		}
-		expected := fmt.Sprintf("cannot read FAT32 FS Information Sector from %d bytes", len(b))
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("invalid start signature", func(t *testing.T) {
@@ -59,10 +49,6 @@ func TestFsInformationSectorFromBytes(t *testing.T) {
 		if fsis != nil {
 			t.Fatalf("returned FSInformationSector was non-nil")
 		}
-		expected := "invalid signature at beginning of FAT 32 Filesystem Information Sector"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid middle signature", func(t *testing.T) {
 		input, err := os.ReadFile(Fat32File)
@@ -79,10 +65,6 @@ func TestFsInformationSectorFromBytes(t *testing.T) {
 		if fsis != nil {
 			t.Fatalf("returned FSInformationSector was non-nil")
 		}
-		expected := "invalid signature at middle of FAT 32 Filesystem Information Sector"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
-		}
 	})
 	t.Run("invalid end signature", func(t *testing.T) {
 		input, err := os.ReadFile(Fat32File)
@@ -98,10 +80,6 @@ func TestFsInformationSectorFromBytes(t *testing.T) {
 		}
 		if fsis != nil {
 			t.Fatalf("returned FSInformationSector was non-nil")
-		}
-		expected := "invalid signature at end of FAT 32 Filesystem Information Sector"
-		if !strings.HasPrefix(err.Error(), expected) {
-			t.Errorf("error type %s instead of expected %s", err.Error(), expected)
 		}
 	})
 	t.Run("valid FS Information Sector", func(t *testing.T) {

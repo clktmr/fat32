@@ -3,7 +3,6 @@ package fat32
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 )
 
 // Dos20BPB is a DOS 2.0 BIOS Parameter Block structure
@@ -29,7 +28,7 @@ func dos20BPBFromBytes(b []byte) (*dos20BPB, error) {
 	// Accept any power-of-2 sector size >= 512
 	sectorSize := binary.LittleEndian.Uint16(b[0:2])
 	if sectorSize < uint16(SectorSize512) || (sectorSize&(sectorSize-1)) != 0 {
-		return nil, fmt.Errorf("invalid sector size %d provided in DOS 2.0 BPB. Must be power of 2 and >= %d", sectorSize, SectorSize512)
+		return nil, errors.New("invalid sector size provided in DOS 2.0 BPB. Must be power of 2 and >= 512")
 	}
 	bpb.bytesPerSector = SectorSize(sectorSize)
 	bpb.sectorsPerCluster = b[2]

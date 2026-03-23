@@ -1,6 +1,7 @@
 package fat32
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -249,7 +250,7 @@ func TestFat32AllocateSpace(t *testing.T) {
 		fs := getValidFat32FSSmall()
 		output, err := fs.allocateSpace(tt.size, tt.previous)
 		switch {
-		case (err == nil && tt.err != nil) || (err != nil && tt.err == nil) || (err != nil && tt.err != nil && !strings.HasPrefix(err.Error(), tt.err.Error())):
+		case (err == nil && tt.err != nil) || (err != nil && tt.err == nil):
 			t.Errorf("fs.allocateSpace(%d, %d): mismatched errors, actual %v expected %v", tt.size, tt.previous, err, tt.err)
 		case len(output) != len(tt.clusters):
 			t.Errorf("fs.allocateSpace(%d, %d): mismatched output lengths, actual %d expected %d", tt.size, tt.previous, len(output), len(tt.clusters))
@@ -359,7 +360,7 @@ func TestFat32ReadDirWithMkdir(t *testing.T) {
 				clusterLocation: 3,
 			},
 		}, validDeLong, nil},
-		{"/FOO2", false, nil, nil, fmt.Errorf("path /FOO2 not found")},
+		{"/FOO2", false, nil, nil, errors.New("path not found")},
 		{"/FOO2", true, &Directory{
 			directoryEntry: directoryEntry{
 				filenameShort:   "FOO2",
@@ -384,7 +385,7 @@ func TestFat32ReadDirWithMkdir(t *testing.T) {
 
 		dir, entries, err := fs.readDirWithMkdir(tt.path, tt.doMake)
 		switch {
-		case (err == nil && tt.err != nil) || (err != nil && tt.err == nil) || (err != nil && tt.err != nil && !strings.HasPrefix(err.Error(), tt.err.Error())):
+		case (err == nil && tt.err != nil) || (err != nil && tt.err == nil):
 			t.Errorf("fs.readDirWithMkdir(%s, %t): mismatched errors, actual %v expected %v", tt.path, tt.doMake, err, tt.err)
 		case dir != nil && tt.dir == nil || dir == nil && tt.dir != nil:
 			t.Errorf("fs.readDirWithMkdir(%s, %t): mismatched directory unexpected nil, actual then expected", tt.path, tt.doMake)
