@@ -54,10 +54,12 @@ func tmpFat32() (*os.File, error) {
 	in that case, the dataStart is relative to partition, not to disk, so need to read the offset correctly
 */
 
-func clustersFromMap(m map[uint32]uint32, maxCluster uint32) []uint32 {
-	clusters := make([]uint32, maxCluster+1)
+func clustersFromMap(m map[uint32]uint32, maxCluster uint32) *clusters {
+	clusters := newFakeClusters(int((maxCluster + 1) * 4))
 	for k, v := range m {
-		clusters[k] = v
+		if err := clusters.SetCluster(int(k), int32(v)); err != nil {
+			panic(err)
+		}
 	}
 
 	return clusters

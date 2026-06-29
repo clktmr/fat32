@@ -1,6 +1,7 @@
 package fat32
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	iofs "io/fs"
@@ -67,21 +68,6 @@ type FileSystem struct {
 	size            int64
 	start           int64
 	backend         io.ReaderAt
-}
-
-// Equal compare if two filesystems are equal
-func (fs *FileSystem) Equal(a *FileSystem) bool {
-	if fs == nil && a == nil {
-		return true
-	}
-	if fs == nil || a == nil {
-		return false
-	}
-	localMatch := fs.backend == a.backend && fs.dataStart == a.dataStart && fs.bytesPerCluster == a.bytesPerCluster
-	tableMatch := fs.table.equal(&a.table)
-	bsMatch := fs.bootSector.equal(&a.bootSector)
-	fsisMatch := fs.fsis == a.fsis
-	return localMatch && tableMatch && bsMatch && fsisMatch
 }
 
 // Create creates a FAT32 filesystem in a given file or device
@@ -250,8 +236,27 @@ func Create(b io.ReaderAt, size, start, blocksize int64, volumeLabel string, rep
 	fatSecondaryStart := uint64(fatPrimaryStart) + uint64(fatSize)
 	maxCluster := fatSize / 4
 	rootDirCluster := uint32(2)
-	clusters := make([]uint32, maxCluster+1)
-	clusters[rootDirCluster] = eocMarker
+
+	fatReader := io.NewSectionReader(b, int64(fatPrimaryStart)+start, int64(fatSize))
+	fatPrimaryWriter := io.NewOffsetWriter(writableFile, int64(fatPrimaryStart)+start)
+	fatSecondaryWriter := io.NewOffsetWriter(writableFile, int64(fatSecondaryStart)+start)
+	fatWriter := io.MultiWriter(fatPrimaryWriter, fatSecondaryWriter)
+
+	// Zero out the FAT partitions on disk.
+	if _, err := io.CopyN(fatWriter, zeroReader{}, int64(fatSize)); err != nil {
+		return nil, err
+	}
+
+	clusters := newClusters(fatReader, newMultiWriterAt(fatPrimaryWriter, fatSecondaryWriter), int64(fatSize))
+	if err := clusters.SetCluster(0, int32(fatID)); err != nil {
+		return nil, err
+	}
+	if err := clusters.SetCluster(1, int32(eocMarker)); err != nil {
+		return nil, err
+	}
+	if err := clusters.SetCluster(int(rootDirCluster), int32(eocMarker)); err != nil {
+		return nil, err
+	}
 	fat := table{
 		fatID:          fatID,
 		eocMarker:      eocMarker,
@@ -288,7 +293,7 @@ func Create(b io.ReaderAt, size, start, blocksize int64, volumeLabel string, rep
 	}
 
 	// write the FAT tables
-	if err := fs.writeFat(); err != nil {
+	if err := fs.table.clusters.Flush(); err != nil {
 		return nil, WrapError("failed to write the file allocation table", err)
 	}
 
@@ -400,21 +405,54 @@ func Read(b io.ReaderAt, size, start, blocksize int64) (*FileSystem, error) {
 		return nil, WrapError("error reading FileSystem Information Sector", err)
 	}
 
-	partitionTableBytes := make([]byte, fatSize)
-	_, _ = b.ReadAt(partitionTableBytes, int64(fatPrimaryStart)+start)
-	fat := tableFromBytes(partitionTableBytes)
+	var fatIDBytes [8]byte
+	_, err = b.ReadAt(fatIDBytes[:], int64(fatPrimaryStart)+start)
+	if err != nil {
+		return nil, WrapError("unable to read primary FAT table ID", err)
+	}
+	fatID := binary.LittleEndian.Uint32(fatIDBytes[0:4])
+	eocMarker := binary.LittleEndian.Uint32(fatIDBytes[4:8])
 
-	_, _ = b.ReadAt(partitionTableBytes, int64(fatSecondaryStart)+start)
-	fat2 := tableFromBytes(partitionTableBytes)
-	if !fat.equal(fat2) {
+	var w io.WriterAt
+	if writer, ok := b.(io.WriterAt); ok {
+		w = writer
+	}
+
+	var fatPrimaryWriter, fatSecondaryWriter io.WriterAt
+	if w != nil {
+		fatPrimaryWriter = io.NewOffsetWriter(w, int64(fatPrimaryStart)+start)
+		fatSecondaryWriter = io.NewOffsetWriter(w, int64(fatSecondaryStart)+start)
+	}
+	fatReader := io.NewSectionReader(b, int64(fatPrimaryStart)+start, int64(fatSize))
+	fatSecondaryReader := io.NewSectionReader(b, int64(fatSecondaryStart)+start, int64(fatSize))
+
+	maxCluster := fatSize / 4
+
+	clusters1 := newClusters(fatReader, nil, int64(fatSize))
+	clusters2 := newClusters(fatSecondaryReader, nil, int64(fatSize))
+	equal, err := clusters1.Equal(clusters2)
+	if err != nil {
+		return nil, err
+	}
+	if !equal {
 		return nil, errors.New("fat tables did not match")
 	}
+
+	fat := table{
+		fatID:          fatID,
+		eocMarker:      eocMarker,
+		size:           fatSize,
+		clusters:       newClusters(fatReader, newMultiWriterAt(fatPrimaryWriter, fatSecondaryWriter), int64(fatSize)),
+		maxCluster:     maxCluster,
+		rootDirCluster: 2, // always 2 for FAT32
+	}
+
 	dataStart := uint32(fatSecondaryStart) + fat.size
 
 	return &FileSystem{
 		bootSector:      *bs,
 		fsis:            *fsis,
-		table:           *fat,
+		table:           fat,
 		dataStart:       dataStart,
 		bytesPerCluster: int(sectorsPerCluster) * int(bytesPerSector),
 		start:           start,
@@ -490,29 +528,6 @@ func (fs *FileSystem) writeFsis() error {
 	return nil
 }
 
-func (fs *FileSystem) writeFat() error {
-	reservedSectors := fs.bootSector.biosParameterBlock.dos331BPB.dos20BPB.reservedSectors
-	bytesPerSector := fs.bootSector.biosParameterBlock.dos331BPB.dos20BPB.bytesPerSector
-	fatPrimaryStart := uint64(reservedSectors) * uint64(bytesPerSector)
-	fatSecondaryStart := fatPrimaryStart + uint64(fs.table.size)
-
-	fatBytes := fs.table.bytes()
-	writableFile, ok := fs.backend.(io.WriterAt)
-	if !ok {
-		return ErrReadonlyFilesystem
-	}
-
-	if _, err := writableFile.WriteAt(fatBytes, int64(fatPrimaryStart)+fs.start); err != nil {
-		return WrapError("unable to write primary FAT table", err)
-	}
-
-	if _, err := writableFile.WriteAt(fatBytes, int64(fatSecondaryStart)+fs.start); err != nil {
-		return WrapError("unable to write backup FAT table", err)
-	}
-
-	return nil
-}
-
 // Do cleaning job for fat32. Note that fat32 does not have side-effects so we do not do anything.
 func (fs *FileSystem) Close() error {
 	return nil
@@ -572,9 +587,10 @@ func (fs *FileSystem) Chtimes(p string, ctime, atime, mtime time.Time) error {
 // Will return an error if the directory does not exist or is a regular file and not a directory
 func (fs *FileSystem) ReadDir(p string) ([]iofs.DirEntry, error) {
 	// should not accept anything that starts with /
-	if err := validatePath(p); err != nil {
-		return nil, err
+	if !iofs.ValidPath(p) {
+		return nil, iofs.ErrInvalid
 	}
+
 	_, entries, err := fs.readDirWithMkdir(p, false)
 	if err != nil {
 		return nil, WrapError("error reading directory "+p, err)
@@ -927,19 +943,26 @@ func (fs *FileSystem) SetLabel(volumeLabel string) error {
 func (fs *FileSystem) getClusterList(firstCluster uint32) ([]uint32, error) {
 	// first, get the chain of clusters
 	complete := false
-	cluster := firstCluster
 
 	// do we even have a valid cluster?
-	if cluster > fs.table.maxCluster || fs.table.clusters[cluster] == 0 {
+	cluster, err := fs.table.clusters.Cluster(firstCluster)
+	if err != nil {
+		return nil, err
+	}
+	if firstCluster > fs.table.maxCluster || cluster == 0 {
 		return nil, errors.New("invalid start cluster")
 	}
 
+	cluster = firstCluster
 	clusterList := make([]uint32, 0, 5)
 	for !complete {
 		// save the current cluster
 		clusterList = append(clusterList, cluster)
 		// get the next cluster
-		newCluster := fs.table.clusters[cluster]
+		newCluster, err := fs.table.clusters.Cluster(cluster)
+		if err != nil {
+			return nil, err
+		}
 		// if it is EOC, we are done
 		switch {
 		case fs.table.isEoc(newCluster):
@@ -1212,7 +1235,11 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 
 	if extraClusterCount > 0 {
 		for i := uint32(2); i < maxCluster && len(allocated) < extraClusterCount; i++ {
-			if fs.table.clusters[i] == 0 {
+			cluster, err := fs.table.clusters.Cluster(i)
+			if err != nil {
+				return nil, err
+			}
+			if cluster == 0 {
 				// these become the same at this point
 				allocated = append(allocated, i)
 			}
@@ -1228,12 +1255,18 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 
 		// extend the chain and fill them in
 		if previous > 0 {
-			fs.table.clusters[previous] = allocated[0]
+			if err := fs.table.clusters.SetCluster(int(previous), int32(allocated[0])); err != nil {
+				return nil, err
+			}
 		}
 		for i := 0; i < lastAlloc; i++ {
-			fs.table.clusters[allocated[i]] = allocated[i+1]
+			if err := fs.table.clusters.SetCluster(int(allocated[i]), int32(allocated[i+1])); err != nil {
+				return nil, err
+			}
 		}
-		fs.table.clusters[allocated[lastAlloc]] = fs.table.eocMarker
+		if err := fs.table.clusters.SetCluster(int(allocated[lastAlloc]), int32(fs.table.eocMarker)); err != nil {
+			return nil, err
+		}
 
 		// update the FSIS
 		lastAllocatedCluster = allocated[len(allocated)-1]
@@ -1254,7 +1287,9 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 		}
 
 		// mark last allocated one as EOC
-		fs.table.clusters[clusters[lastAlloc]] = fs.table.eocMarker
+		if err := fs.table.clusters.SetCluster(int(clusters[lastAlloc]), int32(fs.table.eocMarker)); err != nil {
+			return nil, err
+		}
 
 		// unmark all of the unused ones
 		lastAllocatedCluster = fs.fsis.lastAllocatedCluster
@@ -1263,7 +1298,9 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 				return nil, errors.New("invalid cluster chain")
 			}
 
-			fs.table.clusters[cl] = fs.table.unusedMarker
+			if err := fs.table.clusters.SetCluster(int(cl), int32(fs.table.unusedMarker)); err != nil {
+				return nil, err
+			}
 			if cl == lastAllocatedCluster {
 				lastAllocatedCluster--
 			}
@@ -1277,7 +1314,7 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 	}
 
 	// write the FAT tables
-	if err := fs.writeFat(); err != nil {
+	if err := fs.table.clusters.Flush(); err != nil {
 		return nil, WrapError("failed to write the file allocation table", err)
 	}
 
@@ -1290,11 +1327,4 @@ func abs(x int) int {
 		return -x
 	}
 	return x
-}
-
-func validatePath(name string) error {
-	if !iofs.ValidPath(name) {
-		return iofs.ErrInvalid
-	}
-	return nil
 }

@@ -463,7 +463,7 @@ func testReadFilesystemData() (info *testFSInfo, err error) {
 				rootDirCluster: 2,         // root is at cluster 2
 				size:           sizeInBytes,
 				maxCluster:     numClusters,
-				clusters:       make([]uint32, numClusters+1),
+				clusters:       newFakeClusters(int((numClusters + 1) * 4)),
 			}
 		case inClusters && len(clusterLineMatch) > 4:
 			start, err := strconv.Atoi(clusterLineMatch[1])
@@ -492,13 +492,17 @@ func testReadFilesystemData() (info *testFSInfo, err error) {
 			// with only the last pointing at the target
 			for i := start; i < end; i++ {
 				startCluster := uint32(i) - info.dataStartSector + 2
-				info.table.clusters[startCluster] = startCluster + 1
+				if err := info.table.clusters.SetCluster(int(startCluster), int32(startCluster+1)); err != nil {
+					panic(err)
+				}
 			}
 			endCluster := uint32(end) - info.dataStartSector + 2
 			if endCluster == 2 {
 				target = eocMin
 			}
-			info.table.clusters[endCluster] = target
+			if err := info.table.clusters.SetCluster(int(endCluster), int32(target)); err != nil {
+				panic(err)
+			}
 		}
 	}
 	return info, err

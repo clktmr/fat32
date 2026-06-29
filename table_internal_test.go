@@ -2,11 +2,9 @@ package fat32
 
 import (
 	"bytes"
+	"io"
 	"os"
-	"slices"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 const (
@@ -18,38 +16,27 @@ func getValidFat32Table() *table {
 	// make a duplicate, in case someone modifies what we return
 	t := &table{}
 	*t = *fsInfo.table
+	// Flush the clusters cache first to persist modifications to the fakeClusters slice
+	if err := t.clusters.Flush(); err != nil {
+		panic(err)
+	}
 	// and because the clusters are copied by reference
-	t.clusters = slices.Clone(t.clusters)
+	if fc, ok := t.clusters.reader.(fakeClusters); ok {
+		cloned := make(fakeClusters, len(fc))
+		copy(cloned, fc)
+		t.clusters = newClusters(cloned, cloned, t.clusters.size)
+	}
 
 	return t
-}
-
-func TestFat32TableFromBytes(t *testing.T) {
-	t.Run("valid FAT32 Table", func(t *testing.T) {
-		input, err := os.ReadFile(Fat32File)
-		if err != nil {
-			t.Fatalf("error reading test fixture data from %s: %v", Fat32File, err)
-		}
-		b := input[fsInfo.firstFAT : fsInfo.firstFAT+fsInfo.sectorsPerFAT*fsInfo.bytesPerSector]
-		result := tableFromBytes(b)
-		if result == nil {
-			t.Fatalf("returned FAT32 Table was nil unexpectedly")
-		}
-		valid := getValidFat32Table()
-		if !result.equal(valid) {
-			diff := cmp.Diff(result, valid, cmp.AllowUnexported(table{}))
-			t.Log(diff)
-			t.Fatalf("Mismatched FAT32 Table")
-		}
-	})
 }
 
 func TestFat32TableToBytes(t *testing.T) {
 	t.Run("valid FAT32 table", func(t *testing.T) {
 		table := getValidFat32Table()
-		b := table.bytes()
-		if b == nil {
-			t.Fatal("b was nil unexpectedly")
+		bReader := io.NewSectionReader(table, 0, int64(table.size))
+		b, err := io.ReadAll(bReader)
+		if err != nil {
+			t.Fatalf("unable to read bytes from table: %v", err)
 		}
 		valid, err := os.ReadFile(Fat32File)
 		if err != nil {
@@ -88,4 +75,33 @@ func TestFat32TableIsEoc(t *testing.T) {
 			t.Errorf("isEoc(%x): actual %t instead of expected %t", tt.cluster, eoc, tt.eoc)
 		}
 	}
+}
+
+type fakeClusters []byte
+
+func (f fakeClusters) ReadAt(p []byte, off int64) (n int, err error) {
+	if off < 0 || off >= int64(len(f)) {
+		return 0, io.EOF
+	}
+	n = copy(p, f[off:])
+	if n < len(p) {
+		err = io.EOF
+	}
+	return n, err
+}
+
+func (f fakeClusters) WriteAt(p []byte, off int64) (n int, err error) {
+	if off < 0 || off >= int64(len(f)) {
+		return 0, io.ErrShortWrite
+	}
+	n = copy(f[off:], p)
+	if n < len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
+}
+
+func newFakeClusters(size int) *clusters {
+	storage := make(fakeClusters, size)
+	return newClusters(storage, storage, int64(size))
 }
