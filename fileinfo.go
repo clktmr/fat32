@@ -67,7 +67,7 @@ func (fi FileInfo) Size() int64 {
 // Sys underlying data source - not supported yet and so will return nil
 //
 //nolint:gocritic // we need this to comply with fs.FileInfo
-func (fi FileInfo) Sys() interface{} {
+func (fi FileInfo) Sys() any {
 	return nil
 }
 

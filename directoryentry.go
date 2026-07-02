@@ -269,7 +269,7 @@ func longFilenameBytes(s, shortName, extension string) ([]byte, error) {
 	// convert the rune slice into a byte slice with 2 bytes per rune
 	// vfat long filenames support UCS-2 *only*
 	// so it is *very* important we do not try to parse them otherwise
-	for i := 0; i < maxChars; i++ {
+	for i := range maxChars {
 		// do we have a rune at this point?
 		var tmpb []byte
 		switch {
@@ -335,7 +335,7 @@ func longFilenameEntryFromBytes(b []byte) (string, error) {
 	// so it is *very* important we do not try to parse them otherwise
 	r := make([]rune, 0, maxCharsLongFilename)
 	// now we can iterate
-	for i := 0; i < maxCharsLongFilename; i++ {
+	for i := range maxCharsLongFilename {
 		// little endian
 		val := uint16(b2[2*i+1])<<8 + uint16(b2[2*i])
 		// stop at all 0
@@ -412,7 +412,7 @@ func stringToASCIIBytes(s string) ([]byte, error) {
 	// convert the name into 11 bytes
 	r := []rune(s)
 	// take the first 8 characters
-	for i := 0; i < length; i++ {
+	for i := range length {
 		val := int(r[i])
 		// we only can handle values less than max byte = 255
 		if val > 255 {

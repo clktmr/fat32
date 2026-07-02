@@ -1259,7 +1259,7 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 				return nil, err
 			}
 		}
-		for i := 0; i < lastAlloc; i++ {
+		for i := range lastAlloc {
 			if err := fs.table.clusters.SetCluster(int(allocated[i]), int32(allocated[i+1])); err != nil {
 				return nil, err
 			}
@@ -1276,10 +1276,7 @@ func (fs *FileSystem) allocateSpace(size uint64, previous uint32) ([]uint32, err
 			deallocated []uint32
 		)
 		toRemove := abs(extraClusterCount)
-		lastAlloc = len(clusters) - toRemove - 1
-		if lastAlloc < 0 {
-			lastAlloc = 0
-		}
+		lastAlloc = max(len(clusters)-toRemove-1, 0)
 		deallocated = clusters[lastAlloc+1:]
 
 		if uint32(lastAlloc) > fs.table.maxCluster || clusters[lastAlloc] > fs.table.maxCluster {

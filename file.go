@@ -135,10 +135,7 @@ func (fl *File) Read(b []byte) (int, error) {
 		remainder := fl.offset % int64(bytesPerCluster)
 		if remainder != 0 {
 			offset := int64(start) + int64(lastCluster-2)*int64(bytesPerCluster) + remainder
-			toRead := int64(bytesPerCluster) - remainder
-			if toRead > int64(len(b)) {
-				toRead = int64(len(b))
-			}
+			toRead := min(int64(bytesPerCluster)-remainder, int64(len(b)))
 			_, _ = file.ReadAt(b[0:toRead], offset+fs.start)
 			totalRead += int(toRead)
 			clusterIndex++
@@ -147,10 +144,7 @@ func (fl *File) Read(b []byte) (int, error) {
 
 	for i := clusterIndex; i < len(clusters); i++ {
 		left := maxRead - totalRead
-		toRead := bytesPerCluster
-		if toRead > left {
-			toRead = left
-		}
+		toRead := min(bytesPerCluster, left)
 		offset := int64(start) + int64(clusters[i]-2)*int64(bytesPerCluster)
 		_, _ = file.ReadAt(b[totalRead:totalRead+toRead], offset+fs.start)
 		totalRead += toRead
@@ -192,10 +186,7 @@ func (fl *File) Write(p []byte) (int, error) {
 	// what is the new file size?
 	writeSize := len(p)
 	oldSize := int64(fl.fileSize)
-	newSize := fl.offset + int64(writeSize)
-	if newSize < oldSize {
-		newSize = oldSize
-	}
+	newSize := max(fl.offset+int64(writeSize), oldSize)
 	// 1- ensure we have space and clusters
 	clusters, err := fs.allocateSpace(uint64(newSize), fl.clusterLocation)
 	if err != nil {
@@ -219,11 +210,9 @@ func (fl *File) Write(p []byte) (int, error) {
 		remainder := fl.offset % int64(bytesPerCluster)
 		if remainder != 0 {
 			offset := int64(start) + int64(lastCluster-2)*int64(bytesPerCluster) + remainder
-			toWrite := int64(bytesPerCluster) - remainder
-			// max we can write
-			if toWrite > int64(len(p)) {
-				toWrite = int64(len(p))
-			}
+			toWrite := min(
+				// max we can write
+				int64(bytesPerCluster)-remainder, int64(len(p)))
 			_, err := writableFile.WriteAt(p[0:toWrite], offset+fs.start)
 			if err != nil {
 				return totalWritten, WrapError("unable to write to file", err)
@@ -235,10 +224,7 @@ func (fl *File) Write(p []byte) (int, error) {
 
 	for i := clusterIndex; i < len(clusters); i++ {
 		left := len(p) - totalWritten
-		toWrite := bytesPerCluster
-		if toWrite > left {
-			toWrite = left
-		}
+		toWrite := min(bytesPerCluster, left)
 		offset := int64(start) + int64(clusters[i]-2)*int64(bytesPerCluster)
 		_, err := writableFile.WriteAt(p[totalWritten:totalWritten+toWrite], offset+fs.start)
 		if err != nil {
